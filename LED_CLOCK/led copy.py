@@ -1,0 +1,170 @@
+import time
+from rpi_ws281x import PixelStrip, Color
+import threading
+
+
+# it starts from 0
+
+# LED strip configuration:
+LED_COUNT      = 60       # Number of LEDs
+LED_PIN        = 18       # GPIO (LED_PIN=18 == 12PIN)
+LED_FREQ_HZ    = 800000   # LED signal frequency in Hz
+LED_DMA        = 10       # DMA channel
+LED_BRIGHTNESS = 1      # 0-255
+LED_INVERT     = False    # True if using inverting circuit
+LED_CHANNEL    = 0        # PWM channel
+
+# Create PixelStrip object
+strip = PixelStrip(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL)
+strip.begin()
+
+def getColor(color_name):
+    if color_name == "pink":
+        return Color(249,8,209)
+    elif color_name == "blue":
+        return Color(8,0,249)
+    elif color_name == "green":
+        return Color(0,255,0)
+    else:
+        return Color(255,255,255)
+
+
+def turnOn(led_num, intensity, color):
+    """
+    led_num   : LED index (0-based)
+    intensity : 0.0 to 1.0
+    color     : Color(r, g, b)
+    """
+    if not (0 <= led_num < strip.numPixels()):
+        return
+
+    intensity = max(0.0, min(1.0, intensity))
+
+    r = (color >> 16) & 0xFF
+    g = (color >> 8) & 0xFF
+    b = color & 0xFF
+
+    r = int(r * intensity)
+    g = int(g * intensity)
+    b = int(b * intensity)
+
+    strip.setPixelColor(led_num, Color(r, g, b))
+    strip.show()
+
+def turn_all(num):
+    try:
+        for i in range(strip.numPixels()):
+            turnOn(i, num, Color(255, 255, 255))  #off 
+    except Exception as e:
+        print("LED error:", e)
+
+#hour: 0–23
+#minute: 0–59
+#second: 0–59
+def test2():
+    for _ in range(10):
+        now = time.localtime()
+        hour, minute, second = now.tm_hour, now.tm_min, now.tm_sec
+        print(f" alala {hour:02}:{minute:02}:{second:02}")
+        time.sleep(1)
+
+
+def test3():
+    num = 59
+    on = 1.0
+    off = 0.0
+    turnOn(num, on, Color(255, 255, 255))  # ON
+    print(range(strip.numPixels()))
+
+#strip.numPixels(): 0-59
+# def test4():
+#     num = 59
+#     on = 1.0
+#     off = 0.0
+#     turnOn(num, on, Color(255, 255, 255))  # ON
+
+#     print(range()
+#     for _ in range(10):
+#         now = time.localtime()
+#         hour, minute, second = now.tm_hour, now.tm_min, now.tm_sec
+#         print(f" alala {hour:02}:{minute:02}:{second:02}")
+#         time.sleep(1)
+
+#problem 
+# x  index 6 is considered as hour 5. NO PROBLEM because index = 12:00 or 12:60
+# 
+
+
+# FROM 
+# time.localtiime() =>  led #
+# second = 0 ~ 61    0 ~ 59
+# minute = 0 ~ 59    0 ~ 59
+# hour =   0 ~ 23    0 ~ 59
+def convertTimeToLed():
+    now = time.localtime()
+    hour, minute, second = now.tm_hour, now.tm_min, now.tm_sec
+
+    ret_hour = (hour %12) * 5
+    ret_min = minute
+    if second >= 60:
+        ret_sec = 0
+    else:
+        ret_sec = second
+
+    return ret_hour, ret_min, ret_sec
+
+
+
+def test4():
+    turn_all(0.0)
+
+    for _ in range(120):
+        # now = time.localtime()
+        # hour, minute, second = now.tm_hour, now.tm_min, now.tm_sec
+        led_hour, led_min, led_sec = convertTimeToLed()
+
+
+        print(f"{led_hour}:{led_min}:{led_sec} ")
+
+        #ignore turning on second if it's already used by minute or hour
+        # then update 
+
+        #second
+        if led_sec != led_min and led_sec != led_hour:
+            turnOn(led_sec, 1.0, getColor("pink"))  # ON
+        else:
+            print(f"led_sec not applied {led_hour}:{led_min}:{led_sec} ")
+
+        #minute
+        if led_min != led_hour:
+            turnOn(led_min, 1.0, getColor("green"))
+        else:
+            print(f"led_min not applied {led_hour}:{led_min}:{led_sec} ")
+
+        #hour
+        turnOn(led_hour, 1.0, getColor("blue"))
+
+        if led_sec <= 0:
+            turn_all(0.0)
+
+        time.sleep(1)
+
+    turn_all(0.0)
+
+def test5():
+    turn_all(0.0)
+    turnOn(1, 1.0, getColor("green"))
+    turnOn(2, 1.0, getColor("blue"))
+    turnOn(3, 1.0, getColor("pink"))
+
+def test6():
+    turn_all(0.0)
+    turnOn(59, 1.0, getColor("blue"))
+    turnOn(60, 1.0, getColor("pink")) #doesn't exist
+    turnOn(0, 1.0, getColor("green"))
+
+# Main program
+if __name__ == "__main__":
+   #test4()
+    #turnOn(59, 1.0, Color(255, 255, 255))  # ON
+    test4()
