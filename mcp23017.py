@@ -47,7 +47,18 @@
 # 6 for 39 18
 
 
+# sens   mcp  SENSOR is input
+# ----------
+# SIG -> PA2
+# VCC -> VCC
+# GND -> GND
+ 
+# led (470ohm) LED is output
+# ----------
+# LED -> PA1 
+# GND -> GND
 
+#for pythhon to access linux /dev/i2c-1
 from smbus2 import SMBus
 import time
 
@@ -55,13 +66,14 @@ import time
 OLATA  = 0x14
 
 #sensor
-ADDR   = 0x27
-IODIRA = 0x00
-GPPUA  = 0x0C
-GPIOA  = 0x12
-IOCON  = 0x0A
+ADDR   = 0x27 #i2c address 
+IODIRA = 0x00 #address IODIRA register. 1=input 0=output
+GPPUA  = 0x0C #address of internal pull up register for portA 1=enable pull up 0=disable
+GPIOA  = 0x12 #address of GPIOA register for PA pins
+IOCON  = 0x0A #address of config register to disable sequential addressing
 
-PA2_MASK = 0b00000100  # bit 2
+PA1_MASK = 0b11111101  # PA1 output, others input (PA7,PA6...PA)
+PA2_MASK = 0b00000100  # binary mask for PA2 76543210 so 0b100 is "2" PA2 is selected
 
 bus = SMBus(1)
 
@@ -70,10 +82,9 @@ bus.write_byte_data(ADDR, IOCON, 0x20)
 
 # All Port A inputs
 # bus.write_byte_data(ADDR, IODIRA, 0xFF)
-# PA1 output, others input
-bus.write_byte_data(ADDR, IODIRA, 0b11111101)
+bus.write_byte_data(ADDR, IODIRA, PA1_MASK)
 
-# Enable pull-up on PA2
+# Enable pull-up on PA2 to avoid floating
 bus.write_byte_data(ADDR, GPPUA, PA2_MASK)
 
 print("Touch sensor on PA2 ready")
