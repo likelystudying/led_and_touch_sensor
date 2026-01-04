@@ -31,28 +31,64 @@
 # 60: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
 # 70: -- -- -- -- -- -- -- -- 
 
-#PA1 → 330Ω → LED → GND
+
+# pi@raspberrypi:~/led $ python3 mcp23017.py 
+# Touch sensor on PA2 ready
+# 0 for 39 18
+# not touched
+# 0 for 39 18
+# not touched
+# 0 for 39 18
+# not touched
+# 4 for 39 18
+# TOUCHED
+# 6 for 39 18
+# TOUCHED
+# 6 for 39 18
+
 
 
 from smbus2 import SMBus
 import time
 
-ADDR   = 0x27 
-IODIRA = 0x00
+#led
 OLATA  = 0x14
+
+#sensor
+ADDR   = 0x27
+IODIRA = 0x00
+GPPUA  = 0x0C
+GPIOA  = 0x12
 IOCON  = 0x0A
+
+PA2_MASK = 0b00000100  # bit 2
 
 bus = SMBus(1)
 
+# Stable mode
 bus.write_byte_data(ADDR, IOCON, 0x20)
 
+# All Port A inputs
+# bus.write_byte_data(ADDR, IODIRA, 0xFF)
 # PA1 output, others input
 bus.write_byte_data(ADDR, IODIRA, 0b11111101)
 
+# Enable pull-up on PA2
+bus.write_byte_data(ADDR, GPPUA, PA2_MASK)
+
+print("Touch sensor on PA2 ready")
+
 while True:
-    bus.write_byte_data(ADDR, OLATA, 0b00000010)  # PA1 ON
-    print("on")
-    time.sleep(1)
-    bus.write_byte_data(ADDR, OLATA, 0b00000000)  # OFF
-    print("off")
-    time.sleep(1)
+    val = bus.read_byte_data(ADDR, GPIOA)
+    print(f"{val} for {ADDR} {GPIOA}")
+    bit = (val & PA2_MASK) >> 2
+
+    # Most touch sensors: HIGH when touched
+    if bit == 1:
+        print("TOUCHED")
+        bus.write_byte_data(ADDR, OLATA, 0b00000010)  # PA1 ON
+    else:
+        print("not touched")
+        bus.write_byte_data(ADDR, OLATA, 0b00000000)  # OFF
+
+    time.sleep(0.1)
