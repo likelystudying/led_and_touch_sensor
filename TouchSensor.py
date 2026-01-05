@@ -2,6 +2,35 @@ from smbus2 import SMBus
 import threading
 import time
 
+
+#initial setup
+
+##raspberry pi
+# | MCP23017 | Raspberry Pi    |
+# | -------- | --------------- |
+# | INTA     | GPIO17 (pin 11) |
+# | INTB     | GPIO27 (pin 13) |
+# | VDD      | 3.3V            |
+# | VSS      | GND             |
+# | SDA      | GPIO2           |
+# | SCL      | GPIO3           |
+# | RESET    | 3.3V            |
+
+##MCP23017
+# touch sensor input
+# sens   mcp  SENSOR
+# ----------
+# SIG -> PA2
+# VCC -> VCC
+# GND -> GND
+ 
+# led output
+# led (470ohm) LED
+# ----------
+# LED -> PA1 
+# GND -> GND
+
+
 class MCP23017TouchLED:
     def __init__(self, i2c_addr=0x27, bus_id=1):
         # MCP23017 registers
@@ -53,7 +82,8 @@ class MCP23017TouchLED:
                 val = self.bus.read_byte_data(self.ADDR, self.GPIOA)
                 self.touched = ((val & self.PA2_MASK) >> 2) == 1
             # Debug print
-            print("TOUCHED" if self.touched else "not touched")
+            if self.touched:
+                print("TOUCHED")
             time.sleep(0.05)
 
     def _led_thread(self):
@@ -74,16 +104,23 @@ class MCP23017TouchLED:
         - Turn LED on
         - If sensor touched while LED is on, turn it off
         """
+
         while True:
             with self._lock:
                 if not self.led_on:
                     # Turn LED on
                     self.led_on = True
+                    start_time = time.time()  # reset timer
                     print("LED turned ON")
-                elif self.led_on and self.touched:
-                    # Sensor touched, turn LED off
-                    self.led_on = False
-                    print("LED turned OFF due to touch")
+                elif self.led_on:
+                    # Compute elapsed time
+                    elapsed = time.time() - start_time
+                    if self.touched:
+                        # Sensor touched, turn LED off
+                        self.led_on = False
+                        print(f"\n\ {int(elapsed * 1000)} ms")
+                        start_time = None
+
             time.sleep(0.05)
 
     def cleanup(self):
