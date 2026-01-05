@@ -30,9 +30,22 @@ import time
 # LED -> PA1 
 # GND -> GND
 
+from smbus2 import SMBus
+import threading
+import time
 
-class MCP23017TouchLED:
-    def __init__(self, i2c_addr=0x27, bus_id=1):
+
+class MCP23017MultiTouchLED:
+    def __init__(self, i2c_addr=0x27, bus_id=1, sensor_pins=None, led_pins=None):
+        """
+        sensor_pins: list of PA pin numbers for touch sensors (e.g., [2, 3])
+        led_pins: list of PA pin numbers for LEDs (e.g., [1])
+        """
+        if sensor_pins is None:
+            sensor_pins = [2, 3]  # default sensors
+        if led_pins is None:
+            led_pins = [1]  # default LED
+
         # MCP23017 registers
         self.ADDR   = i2c_addr
         self.IODIRA = 0x00
@@ -41,13 +54,17 @@ class MCP23017TouchLED:
         self.OLATA  = 0x14
         self.IOCON  = 0x0A
 
-        # Pin masks
-        self.PA1_MASK = 0b11111101  # PA1 output, others input
-        self.PA2_MASK = 0b00000100  # PA2 input (touch sensor)
+        # Store pin info
+        self.sensor_pins = sensor_pins
+        self.led_pins = led_pins
+
+        # Compute masks
+        self.sensor_masks = [1 << pin for pin in sensor_pins]
+        self.led_masks = [1 << pin for pin in led_pins]
 
         # Shared state
-        self.touched = False
-        self.led_on = False
+        self.touched = [False] * len(sensor_pins)
+        self.led_on = [False] * len(led_pins)
         self._lock = threading.Lock()
 
         # Initialize I2C
@@ -59,15 +76,28 @@ class MCP23017TouchLED:
         self.led_thread = threading.Thread(target=self._led_thread, daemon=True)
         self.control_thread = threading.Thread(target=self._control_thread, daemon=True)
 
-        print("Touch sensor on PA2 ready")
+        print(f"Touch sensors on PA{sensor_pins} ready. LEDs on PA{led_pins} ready.")
 
     def _configure_device(self):
         """Initial configuration of MCP23017."""
         with self._lock:
-            self.bus.write_byte_data(self.ADDR, self.IOCON, 0x20)       # disable sequential addressing
-            self.bus.write_byte_data(self.ADDR, self.IODIRA, self.PA1_MASK)  # PA1 output
-            self.bus.write_byte_data(self.ADDR, self.GPPUA, self.PA2_MASK)   # enable pull-up on PA2
-            self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)       # LED off
+            self.bus.write_byte_data(self.ADDR, self.IOCON, 0x20)  # disable sequential addressing
+
+            # All pins default to input (1)
+            iodir = 0xFF
+            # Set LED pins to output (0)
+            for pin in self.led_pins:
+                iodir &= ~(1 << pin)
+            self.bus.write_byte_data(self.ADDR, self.IODIRA, iodir)
+
+            # Enable pull-ups on sensor pins
+            gppu = 0x00
+            for mask in self.sensor_masks:
+                gppu |= mask
+            self.bus.write_byte_data(self.ADDR, self.GPPUA, gppu)
+
+            # Turn all LEDs off
+            self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)
 
     def start(self):
         """Start all threads."""
@@ -76,62 +106,66 @@ class MCP23017TouchLED:
         self.control_thread.start()
 
     def _touch_sensor_thread(self):
-        """Continuously read touch sensor state."""
+        """Continuously read all touch sensor states."""
         while True:
             with self._lock:
                 val = self.bus.read_byte_data(self.ADDR, self.GPIOA)
-                self.touched = ((val & self.PA2_MASK) >> 2) == 1
-            # Debug print
-            if self.touched:
-                print("TOUCHED")
+                for i, mask in enumerate(self.sensor_masks):
+                    self.touched[i] = (val & mask) != 0
+            # Debug prints
+            for i, t in enumerate(self.touched):
+                if t:
+                    print(f"PA{self.sensor_pins[i]} TOUCHED")
             time.sleep(0.05)
 
     def _led_thread(self):
-        """Simplified LED thread: just sets LED according to led_on state."""
+        """Update all LEDs according to led_on states."""
         while True:
             with self._lock:
-                if self.led_on:
-                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0b00000010)
-                else:
-                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)
-                    time.sleep(0.5)
-
+                olata_val = 0x00
+                for i, led_state in enumerate(self.led_on):
+                    if led_state:
+                        olata_val |= self.led_masks[i]
+                self.bus.write_byte_data(self.ADDR, self.OLATA, olata_val)
             time.sleep(0.05)
 
     def _control_thread(self):
         """
         Control logic:
-        - Turn LED on
-        - If sensor touched while LED is on, turn it off
+        - Turn LEDs on
+        - If any sensor is touched, corresponding LED turns off
+        - Show elapsed time in milliseconds for each LED
         """
+        start_times = [None] * len(self.led_on)
 
         while True:
             with self._lock:
-                if not self.led_on:
-                    # Turn LED on
-                    self.led_on = True
-                    start_time = time.time()  # reset timer
-                    print("LED turned ON")
-                elif self.led_on:
-                    # Compute elapsed time
-                    elapsed = time.time() - start_time
-                    if self.touched:
-                        # Sensor touched, turn LED off
-                        self.led_on = False
-                        print(f"\n\ {int(elapsed * 1000)} ms")
-                        start_time = None
+                for i, led_state in enumerate(self.led_on):
+                    if not led_state:
+                        # Turn LED on
+                        self.led_on[i] = True
+                        start_times[i] = time.time()
+                        print(f"LED on PA{self.led_pins[i]} turned ON")
+                    elif led_state:
+                        elapsed = time.time() - start_times[i]
+                        # If any sensor is touched, turn off corresponding LED
+                        if i < len(self.touched) and self.touched[i]:
+                            self.led_on[i] = False
+                            print(f"LED on PA{self.led_pins[i]} turned OFF due to touch after {int(elapsed*1000)} ms")
+                            start_times[i] = None
 
             time.sleep(0.05)
 
     def cleanup(self):
-        """Turn off LED and close I2C bus."""
+        """Turn off all LEDs and close I2C bus."""
         with self._lock:
             self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)
             self.bus.close()
 
 
 if __name__ == "__main__":
-    touch_led = MCP23017TouchLED()
+    # Example: 2 sensors on PA2 & PA3, 2 LEDs on PA1 & PA4
+    touch_led = MCP23017MultiTouchLED(sensor_pins=[2, 3], led_pins=[1, 4])
     touch_led.start()
 
     try:
