@@ -2,68 +2,80 @@ from smbus2 import SMBus
 import threading
 import time
 
-# MCP23017 registers
-ADDR   = 0x27
-IODIRA = 0x00
-GPPUA  = 0x0C
-GPIOA  = 0x12
-OLATA  = 0x14
-IOCON  = 0x0A
+class MCP23017TouchLED:
+    def __init__(self, i2c_addr=0x27, bus_id=1):
+        # MCP23017 registers
+        self.ADDR   = i2c_addr
+        self.IODIRA = 0x00
+        self.GPPUA  = 0x0C
+        self.GPIOA  = 0x12
+        self.OLATA  = 0x14
+        self.IOCON  = 0x0A
 
-PA1_MASK = 0b11111101  # PA1 output, others input
-PA2_MASK = 0b00000100  # PA2 input
+        # Pin masks
+        self.PA1_MASK = 0b11111101  # PA1 output, others input
+        self.PA2_MASK = 0b00000100  # PA2 input (touch sensor)
 
-# Shared state
-touched = False
-i2c_lock = threading.Lock()  # Make all I2C access thread-safe
+        # Shared state
+        self.touched = False
+        self._lock = threading.Lock()
 
-# Initialize I2C bus
-bus = SMBus(1)
+        # Initialize I2C
+        self.bus = SMBus(bus_id)
+        self._configure_device()
 
-# Configure MCP23017
-with i2c_lock:
-    bus.write_byte_data(ADDR, IOCON, 0x20)        # disable sequential addressing
-    bus.write_byte_data(ADDR, IODIRA, PA1_MASK)   # PA1 output
-    bus.write_byte_data(ADDR, GPPUA, PA2_MASK)    # enable pull-up on PA2
-    bus.write_byte_data(ADDR, OLATA, 0x00)        # make sure LED is off
+        # Threads
+        self.sensor_thread = threading.Thread(target=self._touch_sensor_thread, daemon=True)
+        self.led_thread = threading.Thread(target=self._led_control_thread, daemon=True)
 
-print("Touch sensor on PA2 ready")
+        print("Touch sensor on PA2 ready")
 
-# Touch sensor thread
-def touch_sensor_thread():
-    global touched
-    while True:
-        with i2c_lock:
-            val = bus.read_byte_data(ADDR, GPIOA)
-        bit = (val & PA2_MASK) >> 2
-        touched = (bit == 1)
-        # Debug print
-        print("TOUCHED" if touched else "not touched")
-        time.sleep(0.05)  # 50ms polling
+    def _configure_device(self):
+        """Initial configuration of MCP23017."""
+        with self._lock:
+            self.bus.write_byte_data(self.ADDR, self.IOCON, 0x20)       # disable sequential addressing
+            self.bus.write_byte_data(self.ADDR, self.IODIRA, self.PA1_MASK)  # PA1 output
+            self.bus.write_byte_data(self.ADDR, self.GPPUA, self.PA2_MASK)   # enable pull-up on PA2
+            self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)       # LED off
 
-# LED control thread
-def led_thread():
-    while True:
-        with i2c_lock:
-            if touched:
-                bus.write_byte_data(ADDR, OLATA, 0b00000010)  # PA1 ON
-            else:
-                bus.write_byte_data(ADDR, OLATA, 0b00000000)  # PA1 OFF
-        time.sleep(0.05)
+    def start(self):
+        """Start sensor and LED threads."""
+        self.sensor_thread.start()
+        self.led_thread.start()
 
-# Start threads
-sensor_thread = threading.Thread(target=touch_sensor_thread, daemon=True)
-led_ctrl_thread = threading.Thread(target=led_thread, daemon=True)
+    def _touch_sensor_thread(self):
+        """Thread to read touch sensor state continuously."""
+        while True:
+            with self._lock:
+                val = self.bus.read_byte_data(self.ADDR, self.GPIOA)
+            self.touched = ((val & self.PA2_MASK) >> 2) == 1
+            print("TOUCHED" if self.touched else "not touched")
+            time.sleep(0.05)
 
-sensor_thread.start()
-led_ctrl_thread.start()
+    def _led_control_thread(self):
+        """Thread to control LED based on touch sensor state."""
+        while True:
+            with self._lock:
+                if self.touched:
+                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0b00000010)  # LED ON
+                else:
+                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0b00000000)  # LED OFF
+            time.sleep(0.05)
 
-# Keep main thread alive
-try:
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    print("Exiting...")
-    with i2c_lock:
-        bus.write_byte_data(ADDR, OLATA, 0x00)  # Turn off LED
-    bus.close()
+    def cleanup(self):
+        """Turn off LED and close I2C bus."""
+        with self._lock:
+            self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)
+            self.bus.close()
+
+
+if __name__ == "__main__":
+    touch_led = MCP23017TouchLED()
+    touch_led.start()
+
+    try:
+        while True:
+            time.sleep(1)  # Keep main thread alive
+    except KeyboardInterrupt:
+        print("Exiting...")
+        touch_led.cleanup()
