@@ -18,6 +18,7 @@ class MCP23017TouchLED:
 
         # Shared state
         self.touched = False
+        self.led_on = False
         self._lock = threading.Lock()
 
         # Initialize I2C
@@ -26,7 +27,8 @@ class MCP23017TouchLED:
 
         # Threads
         self.sensor_thread = threading.Thread(target=self._touch_sensor_thread, daemon=True)
-        self.led_thread = threading.Thread(target=self._led_control_thread, daemon=True)
+        self.led_thread = threading.Thread(target=self._led_thread, daemon=True)
+        self.control_thread = threading.Thread(target=self._control_thread, daemon=True)
 
         print("Touch sensor on PA2 ready")
 
@@ -39,27 +41,49 @@ class MCP23017TouchLED:
             self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)       # LED off
 
     def start(self):
-        """Start sensor and LED threads."""
+        """Start all threads."""
         self.sensor_thread.start()
         self.led_thread.start()
+        self.control_thread.start()
 
     def _touch_sensor_thread(self):
-        """Thread to read touch sensor state continuously."""
+        """Continuously read touch sensor state."""
         while True:
             with self._lock:
                 val = self.bus.read_byte_data(self.ADDR, self.GPIOA)
-            self.touched = ((val & self.PA2_MASK) >> 2) == 1
+                self.touched = ((val & self.PA2_MASK) >> 2) == 1
+            # Debug print
             print("TOUCHED" if self.touched else "not touched")
             time.sleep(0.05)
 
-    def _led_control_thread(self):
-        """Thread to control LED based on touch sensor state."""
+    def _led_thread(self):
+        """Simplified LED thread: just sets LED according to led_on state."""
         while True:
             with self._lock:
-                if self.touched:
-                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0b00000010)  # LED ON
+                if self.led_on:
+                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0b00000010)
                 else:
-                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0b00000000)  # LED OFF
+                    self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)
+                    time.sleep(0.5)
+
+            time.sleep(0.05)
+
+    def _control_thread(self):
+        """
+        Control logic:
+        - Turn LED on
+        - If sensor touched while LED is on, turn it off
+        """
+        while True:
+            with self._lock:
+                if not self.led_on:
+                    # Turn LED on
+                    self.led_on = True
+                    print("LED turned ON")
+                elif self.led_on and self.touched:
+                    # Sensor touched, turn LED off
+                    self.led_on = False
+                    print("LED turned OFF due to touch")
             time.sleep(0.05)
 
     def cleanup(self):
@@ -75,7 +99,7 @@ if __name__ == "__main__":
 
     try:
         while True:
-            time.sleep(1)  # Keep main thread alive
+            time.sleep(1)
     except KeyboardInterrupt:
         print("Exiting...")
         touch_led.cleanup()
