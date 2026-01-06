@@ -20,7 +20,7 @@ import time
 # touch sensor input
 # sens   mcp  SENSOR
 # ----------
-# SIG -> PA2
+# SIG -> PA2,3,4 and etc
 # VCC -> VCC
 # GND -> GND
  
@@ -181,10 +181,14 @@ class MCP23017TouchLED:
 
 if __name__ == "__main__":
 
-    sensor_pins = [2,3]
+    #PA
+    sensor_pins = [2,3,4]
     led_pins = [1]
 
-    touch_led = MCP23017TouchLED(sensor_pins, led_pins)
+    touch_led = MCP23017TouchLED(
+        sensor_pins=sensor_pins,
+        led_pins=led_pins
+    )
     touch_led.start()
 
     try:
