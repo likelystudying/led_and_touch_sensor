@@ -47,7 +47,6 @@ class MCP23017TouchLED:
         self.OLATA  = 0x14
         self.IOCON  = 0x0A
 
-
         self.sensor_pins = sensor_pins
         self.led_pins = led_pins
 
@@ -84,12 +83,17 @@ class MCP23017TouchLED:
         self.bus = SMBus(bus_id)
         self._configure_device()
 
+        # add callbacks
+        self._touch_callback = None
+        self._prev_touched = [False] * len(sensor_pins)
+
         # Threads
         self.sensor_thread = threading.Thread(target=self._touch_sensor_thread, daemon=True)
         self.led_thread = threading.Thread(target=self._led_thread, daemon=True)
         self.control_thread = threading.Thread(target=self._control_thread, daemon=True)
 
         print("Touch sensor on PA2 ready")
+
 
     def _configure_device(self):
         """Initial configuration of MCP23017."""
@@ -121,21 +125,52 @@ class MCP23017TouchLED:
         self.led_thread.start()
         self.control_thread.start()
 
+    # def _touch_sensor_thread(self):
+    #     """Continuously read touch sensor state."""
+    #     while True:
+    #         with self._lock:
+    #             val = self.bus.read_byte_data(self.ADDR, self.GPIOA)
+    #             # self.touched[0] = ((val & self.PA2_MASK) >> 2) == 1
+    #             # self.touched[1] = ((val & self.PA3_MASK) >> 3) == 1
+    #             for i, mask in enumerate(self.sensor_masks):
+    #                 self.touched[i] = (val & mask) != 0
+                
+    #             for i, touched in enumerate(self.touched):
+    #                 if touched:
+    #                     print(f"touched {i}")
+                        
+    #         time.sleep(0.05)
+
     def _touch_sensor_thread(self):
-        """Continuously read touch sensor state."""
+        """Continuously read touch sensor state and emit events."""
         while True:
+            callbacks_to_call = []
+
             with self._lock:
                 val = self.bus.read_byte_data(self.ADDR, self.GPIOA)
-                # self.touched[0] = ((val & self.PA2_MASK) >> 2) == 1
-                # self.touched[1] = ((val & self.PA3_MASK) >> 3) == 1
+
                 for i, mask in enumerate(self.sensor_masks):
-                    self.touched[i] = (val & mask) != 0
-                
-                for i, touched in enumerate(self.touched):
-                    if touched:
-                        print(f"touched {i}")
-                        
+                    current = (val & mask) != 0
+                    previous = self._prev_touched[i]
+
+                    # Rising edge: not touched -> touched
+                    if current and not previous:
+                        callbacks_to_call.append((i, True))
+
+                    # Falling edge: touched -> not touched
+                    elif not current and previous:
+                        callbacks_to_call.append((i, False))
+
+                    self.touched[i] = current
+                    self._prev_touched[i] = current
+
+            # Call callbacks OUTSIDE the lock
+            if self._touch_callback:
+                for sensor_index, pressed in callbacks_to_call:
+                    self._touch_callback(sensor_index, pressed)
+
             time.sleep(0.05)
+
 
     def _led_thread(self):
         """Simplified LED thread: just sets LED according to led_on state."""
@@ -179,16 +214,32 @@ class MCP23017TouchLED:
             self.bus.close()
 
 
-if __name__ == "__main__":
+    def set_touch_callback(self, callback):
+        self._touch_callback = callback
 
+
+class TouchConsumer:
+    def on_touch(self, sensor_index, pressed):
+        if pressed:
+            print(f"[CALLBACK] Sensor {sensor_index} PRESSED")
+        else:
+            print(f"[CALLBACK] Sensor {sensor_index} RELEASED")
+
+
+
+def testCallback():
     #PA
-    sensor_pins = [2,3,4]
+    sensor_pins = [2, 3, 4]
     led_pins = [1]
 
     touch_led = MCP23017TouchLED(
         sensor_pins=sensor_pins,
         led_pins=led_pins
     )
+
+    consumer = TouchConsumer()
+    touch_led.set_touch_callback(consumer.on_touch)
+
     touch_led.start()
 
     try:
@@ -197,3 +248,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("Exiting...")
         touch_led.cleanup()
+
+
+if __name__ == "__main__":
+    testCallback()
