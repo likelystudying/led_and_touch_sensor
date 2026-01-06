@@ -34,11 +34,6 @@ import time
 class MCP23017TouchLED:
     def __init__(self, i2c_addr=0x27, bus_id=1, sensor_pins=None, led_pins=None):
 
-        if sensor_pins is None:
-            sensor_pins = [2,3]
-        if led_pins is None:
-            led_pins = [1]
-
         # MCP23017 registers
         self.ADDR   = i2c_addr
         self.IODIRA = 0x00
@@ -67,16 +62,6 @@ class MCP23017TouchLED:
         for _ in range(len(led_pins)):
             self.led_on.append(False)
 
-
-        # Pin masks
-        # self.PA1_MASK = 0b11111101  # PA1 output, others input
-        # self.PA2_MASK = 0b00000100  # PA2 input ( sensor 1)
-        # self.PA3_MASK = 0b00001000  # PA3 input (sensor 2)
-
-        # Shared state
-        # self.touched = [False, False]
-        # self.led_on = False
-
         self._lock = threading.Lock()
 
         # Initialize I2C
@@ -98,11 +83,8 @@ class MCP23017TouchLED:
     def _configure_device(self):
         """Initial configuration of MCP23017."""
         with self._lock:
-            self.bus.write_byte_data(self.ADDR, self.IOCON, 0x20)       # disable sequential addressing
-            #self.bus.write_byte_data(self.ADDR, self.IODIRA, self.PA1_MASK)  # PA1 output
-            #self.bus.write_byte_data(self.ADDR, self.GPPUA, self.PA2_MASK)   # enable pull-up on PA2
-            #self.bus.write_byte_data(self.ADDR, self.GPPUA, self.PA3_MASK)   # enable pull-up on PA3
-            #self.bus.write_byte_data(self.ADDR, self.GPPUA, self.PA3_MASK | self.PA2_MASK)   # enable pull-up on PA3
+            # disable sequential addressing
+            self.bus.write_byte_data(self.ADDR, self.IOCON, 0x20)       
 
             #set all LED pins to output (0)
             iodir = 0xFF
@@ -124,22 +106,6 @@ class MCP23017TouchLED:
         self.sensor_thread.start()
         self.led_thread.start()
         self.control_thread.start()
-
-    # def _touch_sensor_thread(self):
-    #     """Continuously read touch sensor state."""
-    #     while True:
-    #         with self._lock:
-    #             val = self.bus.read_byte_data(self.ADDR, self.GPIOA)
-    #             # self.touched[0] = ((val & self.PA2_MASK) >> 2) == 1
-    #             # self.touched[1] = ((val & self.PA3_MASK) >> 3) == 1
-    #             for i, mask in enumerate(self.sensor_masks):
-    #                 self.touched[i] = (val & mask) != 0
-                
-    #             for i, touched in enumerate(self.touched):
-    #                 if touched:
-    #                     print(f"touched {i}")
-                        
-    #         time.sleep(0.05)
 
     def _touch_sensor_thread(self):
         """Continuously read touch sensor state and emit events."""
@@ -182,14 +148,6 @@ class MCP23017TouchLED:
                         olata_val |= self.led_masks[i]
                 self.bus.write_byte_data(self.ADDR, self.OLATA, olata_val)
             time.sleep(0.05)
-
-            # with self._lock:
-            #     if self.led_on:
-            #         self.bus.write_byte_data(self.ADDR, self.OLATA, 0b00000010)
-            #     else:
-            #         self.bus.write_byte_data(self.ADDR, self.OLATA, 0x00)
-            #         time.sleep(0.5)
-            # time.sleep(0.05)
 
     def _control_thread(self):
         while True:
