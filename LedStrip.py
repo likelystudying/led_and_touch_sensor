@@ -59,6 +59,17 @@ class TouchConsumer2:
         self.game_thread.daemon = True
         self.game_thread.start()
 
+        #start/reset 
+        self.start_combo = (0,1)
+        self.start_hold_time = 1.0 # 1 sec of hold time
+        self.start_press_time = None
+
+        #combo to reset. onTouch() is called separately so we need a thread to keep a track
+        self.sensor_pressed = [False] * len(strip_led_pins)
+        self.combo_thread = threading.Thread(target=self._combo_monitor)
+        self.combo_thread.daemon = True
+        self.combo_thread.start()
+
     def reaction_game_loop(self, tries):
         for _ in range(tries):
             # Choose a random LED
@@ -88,26 +99,81 @@ class TouchConsumer2:
         print(f"wrong touches: {self.total_wrong_touches} / {tries}")
 
     def on_touch(self, sensor_index, pressed=True):
-        if not pressed:
-            return  # only care about presses
-
-        now = time.time() * 1000  # ms
         if sensor_index >= len(self.strip_led_pins):
             return
 
-        if now - self.last_touch[sensor_index] < self.debounce_ms:
-            return  # debounce
+        self.sensor_pressed[sensor_index] = pressed
+
+        # Check start/reset combo
+        self._check_start_reset()
+
+        if not pressed:
+            return  # only react on press for the game logic
+
+        now = time.time()
+        if now - self.last_touch[sensor_index] < self.debounce_ms / 1000:
+            return
 
         self.last_touch[sensor_index] = now
         led_index = self.strip_led_pins[sensor_index]
 
         if led_index == self.current_led_index:
-            # Correct LED pressed → signal event
             self.led_pressed_event.set()
         else:
-            # Optional: wrong LED pressed
-            print(f"[GAME] Wrong LED pressed! Sensor {sensor_index} -> LED {led_index}")
             self.total_wrong_touches += 1
+            print(f"[GAME] Wrong touch ({self.total_wrong_touches})")
+
+    def _check_start_reset(self):
+        s1, s2 = self.start_combo
+        now = time.time()
+
+        if self.sensor_pressed[s1] and self.sensor_pressed[s2]:
+            if self.start_press_time is None:
+                self.start_press_time = now
+            elif now - self.start_press_time >= self.start_hold_time:
+                self._reset_game()
+                self.start_press_time = None
+        else:
+            self.start_press_time = None
+
+    def _reset_game(self):
+        print("\n[GAME] RESET triggered!")
+
+        self.total_reaction_time = 0.0
+        self.total_wrong_touches = 0
+        self.reaction_time = None
+
+        self.led_pressed_event.set()  # unblock game loop if waiting
+
+        self.led_strip.turn_all(self.led_strip.blue())
+        time.sleep(0.2)
+
+        self.led_strip.turn_all_off()
+
+    #not sure if is ideal but it keeps checking every 50ms if two buttons are pressed
+    #pressed states are stored in sensor_pressed[]
+    # eg. 
+    # use touches 1
+    # on_touch(1,True)
+    # sensor_pressed[1]=True
+    # _check_start_reset() #do nothing. no reset.
+    # start_press_time = None
+
+    # user touches 0
+    # on_touch(0, True)
+    # sensor_pressed[0] = True
+    # _check_start_reset()
+    # start_press_time = now and 
+
+    #user presses both for 1 sec
+    #combo_thread checks every 50ms
+    #both pressed ?
+    #if now - start_press_time >= 1
+    #  reset_game
+    def _combo_monitor(self):
+        while True:
+            self._check_start_reset()
+            time.sleep(0.05)  # 50 ms resolution
 
 def testCallback():
     #PA
