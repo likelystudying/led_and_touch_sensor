@@ -31,6 +31,9 @@ import time
 # GND -> GND
 
 
+#todo isolate LED from this class because it's only used for debugging atm
+
+
 class MCP23017TouchLED:
     def __init__(self, i2c_addr=0x27, bus_id=1, sensor_pins=None, led_pins=None):
 
@@ -185,28 +188,28 @@ class TouchConsumer:
 
 
 
-def testCallback():
-    #PA
-    sensor_pins = [2, 3, 4]
-    led_pins = [1]
+# def testCallback():
+#     #PA
+#     sensor_pins = [2, 3, 4, 5]
+#     led_pins = [1]
 
-    touch_led = MCP23017TouchLED(
-        sensor_pins=sensor_pins,
-        led_pins=led_pins
-    )
+#     touch_led = MCP23017TouchLED(
+#         sensor_pins=sensor_pins,
+#         led_pins=led_pins
+#     )
 
-    consumer = TouchConsumer()
-    touch_led.set_touch_callback(consumer.on_touch)
+#     consumer = TouchConsumer()
+#     touch_led.set_touch_callback(consumer.on_touch)
 
-    touch_led.start()
+#     touch_led.start()
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Exiting...")
-        touch_led.cleanup()
+#     try:
+#         while True:
+#             time.sleep(1)
+#     except KeyboardInterrupt:
+#         print("Exiting...")
+#         touch_led.cleanup()
 
 
-if __name__ == "__main__":
-    testCallback()
+# if __name__ == "__main__":
+#     testCallback()
