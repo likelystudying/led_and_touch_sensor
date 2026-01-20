@@ -1,6 +1,6 @@
 Two projects
 
-1. led clock (clock.py)
+1. LED_CLOCK led clock (clock.py)
 
   description: 
     -  the led strip works like a clock. 
@@ -40,7 +40,7 @@ o          *          o
 
 
 
-2. Touch sensor game
+2. REACTION_GAME Touch sensor game
 
 description
   - reaction game for seniors. 
@@ -56,3 +56,38 @@ hardware required
 how to run 
   - to execute 'python3 LedStrip.py'
 
+3. REACTION_GAME_2 Touch sensor game
+
+description
+  - rp2040 zero, oled display and 4 touch sensors
+  - the game represents math questions maps answers to touch sensors tracks the player's score and time
+  - user provides questions.json which contains questions, answers and choices
+
+features
+  - displays math questions and answers on the oled screen
+  - uses 4 capacitive touch sensors with mcp23017 i2c
+  - player selects the correct answer
+  - wrong answr adds a 3 sec penalty
+  - questions, answers and choices loaded from a json file
+
+hardware required
+  - rp2040 zero
+  - mcp23017 gpio expander i2c
+  - ssd1306 oled display i2c
+  - 4 touch sensors 
+  - 4.7kohm pull up on sda and scl
+  - wiring
+
+    component   | RP2040 Zero Pin
+    --------------------------
+    OLED SDA      GPIO 0
+    OLED SCL      GPIO 1
+    MCP23017 SDA  GPIO 0 4.7kohm to 3.3v
+    MCP23017 SCL  GPIO 1 4.7kohm to 3.3v
+    MCP23017 INTA GPIO 7
+    MCP23017 INTB GPIO 8
+    MCP23017 VDD  3.3V
+    MCP23017 GND  GND
+
+how to run
+  - save game.py as main.py in rp2040 zero
