@@ -54,11 +54,6 @@ class TouchConsumer2:
         self.total_reaction_time = 0.0
         self.total_wrong_touches = 0
 
-        # Start reaction game thread
-        self.game_thread = threading.Thread(target=self.reaction_game_loop, args=(tries,))
-        self.game_thread.daemon = True
-        self.game_thread.start()
-
         #start/reset 
         self.start_combo = (0,1)
         self.start_hold_time = 1.0 # 1 sec of hold time
@@ -70,33 +65,59 @@ class TouchConsumer2:
         self.combo_thread.daemon = True
         self.combo_thread.start()
 
-    def reaction_game_loop(self, tries):
-        for _ in range(tries):
-            # Choose a random LED
-            self.current_led_index = random.choice(self.strip_led_pins)
-            print(f"[GAME] LED {self.current_led_index} ON")
-            self.led_strip.set_pixel(self.current_led_index, self.led_strip.green())
-            led_on_time = time.time()  # start time
-            self.led_pressed_event.clear()
+        #restart the game
+        self.running = True
+        self.tries = tries
 
-            # Wait until LED is pressed
-            self.led_pressed_event.wait()  # blocked until touch callback sets it
+        # Start reaction game thread
+        self.game_thread = threading.Thread(target=self.reaction_game_loop)
+        self.game_thread.daemon = True
+        self.game_thread.start()
 
-            # LED was pressed → measure reaction
-            self.reaction_time = time.time() - led_on_time
-            print(f"[GAME] LED {self.current_led_index} pressed! Reaction: {self.reaction_time:.3f}s")
+    def reaction_game_loop(self):
+        while True:
+            #restart the game
+            self.running = True
+            self.total_reaction_time = 0.0
+            self.total_wrong_touches = 0
 
-            # add up the total time
-            self.total_reaction_time = self.reaction_time + self.total_reaction_time
+            for _ in range(self.tries):
+                if not self.running:
+                    break
 
-            # Turn off LED
-            self.led_strip.turn_off_pixel(self.current_led_index)
+                # Choose a random LED
+                self.current_led_index = random.choice(self.strip_led_pins)
+                print(f"[GAME] LED {self.current_led_index} ON")
+                self.led_strip.set_pixel(self.current_led_index, self.led_strip.green())
+                led_on_time = time.time()  # start time
+                self.led_pressed_event.clear()
 
-            #sleep for between 0 to 3 seconds
-            time.sleep(random.uniform(0, 3))
-        
-        print(f"total time: {self.total_reaction_time}")
-        print(f"wrong touches: {self.total_wrong_touches} / {tries}")
+                # Wait until LED is pressed
+                # self.led_pressed_event.wait()  # blocked until touch callback sets it
+                while not self.led_pressed_event.is_set():
+                    if not self.running:
+                        break
+                    time.sleep(0.01)
+                
+                if not self.running:
+                    break
+
+
+                # LED was pressed → measure reaction
+                self.reaction_time = time.time() - led_on_time
+                print(f"[GAME] LED {self.current_led_index} pressed! Reaction: {self.reaction_time:.3f}s")
+
+                # add up the total time
+                self.total_reaction_time = self.reaction_time + self.total_reaction_time
+
+                # Turn off LED
+                self.led_strip.turn_off_pixel(self.current_led_index)
+
+                #sleep for between 0 to 3 seconds
+                time.sleep(random.uniform(0, 3))
+            
+            print(f"total time: {self.total_reaction_time}")
+            print(f"wrong touches: {self.total_wrong_touches} / {self.tries}")
 
     def on_touch(self, sensor_index, pressed=True):
         if sensor_index >= len(self.strip_led_pins):
@@ -118,10 +139,34 @@ class TouchConsumer2:
         led_index = self.strip_led_pins[sensor_index]
 
         if led_index == self.current_led_index:
+            #unblocks the while not self.led_pressed_event.is_set()
             self.led_pressed_event.set()
         else:
             self.total_wrong_touches += 1
             print(f"[GAME] Wrong touch ({self.total_wrong_touches})")
+            threading.Thread(target=self._blink_red, args=(sensor_index,), daemon=True).start()
+   
+    def _blink_red(self, sensor_index, duration=0.2):
+        """Blink the LED corresponding to sensor_index red briefly without affecting others."""
+        led_index = self.strip_led_pins[sensor_index]
+
+        # Save current color
+        current_state = self.led_strip.state[led_index]
+        # Set to red
+        self.led_strip.set_pixel(led_index, self.led_strip.red())
+        time.sleep(duration)
+
+        # Restore previous state
+        if current_state:
+            # LED was on, restore green (active LED)
+            if led_index == self.current_led_index:
+                self.led_strip.set_pixel(led_index, self.led_strip.green())
+            else:
+                # If it was on for some other reason, just leave red off
+                self.led_strip.turn_off_pixel(led_index)
+        else:
+            self.led_strip.turn_off_pixel(led_index)
+            
 
     def _check_start_reset(self):
         s1, s2 = self.start_combo
@@ -138,6 +183,7 @@ class TouchConsumer2:
 
     def _reset_game(self):
         print("\n[GAME] RESET triggered!")
+        self.running = False
 
         self.total_reaction_time = 0.0
         self.total_wrong_touches = 0
