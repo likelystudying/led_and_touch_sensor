@@ -1,0 +1,58 @@
+Two projects
+
+1. led clock (clock.py)
+
+  description: 
+    -  the led strip works like a clock. 
+    -  there are 60 leds on an led strip which represents the seconds, minutes and hours.
+    -  runs on raspberry pi 3bp and wpi led strip rpi_ws281x
+
+  features:
+    - displays current hour, minute and second on an led strip
+    - breathing animation for hour and minute leds
+    - works with threads and asyncio. 
+
+  hardware required:
+    - rp3bp tested 
+    - ws2812
+    - 5v external source for the led strip to power 
+    - 330 ohm in series with the data line to reduce ringing
+    - capacitor not added but its recomended for smooth breathing
+
+  how to run:
+    - the led strip input pwm is connected to raspberry pi gpio
+    - to execute 'sudo python3 abc.py' must be sudo for rpi_ws281x to work
+
+  diagram
+
+   strip start end        
+     oo         oo     
+   o               o   
+  o                 o  
+ o                   o 
+ o                   o  <- hour
+o          *          o
+ o                   o  <- minute
+  o                 o  <- second
+   o               o   
+     oo       ooo       
+        oo        
+
+
+
+2. Touch sensor game
+
+description
+  - reaction game for seniors. 
+  - there are 4 touch sensors and each sensor has a led. if the led turns on the user touches and another led turns on.
+  - runs on a raspberry pi 3bp and the led strip and mcp23017 and touch sensors
+  - mcp23017 is used to reduce the number of gpio pin use on raspberry pi for touch sensors
+features
+hardware required
+  - rb3bp 
+  - ws2812
+  - mcp23017
+  - touch sensors
+how to run 
+  - to execute 'python3 LedStrip.py'
+
